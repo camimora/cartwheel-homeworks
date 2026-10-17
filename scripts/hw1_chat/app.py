@@ -6,7 +6,8 @@ the auth context comes from the users table through ``cli.resolve_auth``,
 never from the chat. The Record button appends one line to
 ``hw1-session.jsonl`` with the observed request, tool calls, and response,
 plus the judgment fields the student typed into the form. The Records tab
-shows the file read-only. Reset DB
+shows the file read-only, and the DB tab browses the world database through
+a read-only SQLite connection. Reset DB
 regenerates the seeded world, like ``uv run python -m seed.generate``.
 
 Run from the repository root:
@@ -18,9 +19,11 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 import threading
 import time
 import uuid
+from contextlib import closing
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -44,6 +47,7 @@ SESSION_FILE = REPO_ROOT / "hw1-session.jsonl"
 SPEC_FILE = REPO_ROOT / "SPEC.md"
 INDEX_HTML = Path(__file__).resolve().parent / "index.html"
 PROBLEM_SOURCES = {"prompt", "tool", "specification"}
+DB_PAGE_SIZE = 50
 
 load_env()
 app = FastAPI(title="Cartwheel HW1 chat")
@@ -187,6 +191,80 @@ def record_lines() -> dict[str, Any]:
         except json.JSONDecodeError as exc:
             rows.append({"line": number, "error": f"invalid JSON: {exc.msg}"})
     return {"records": rows}
+
+
+def _read_only_db() -> sqlite3.Connection:
+    """Open the world database read-only, so the DB tab cannot write to it."""
+    path = config.db_path()
+    if not path.exists():
+        raise HTTPException(404, f"{path.name} does not exist; reset the database")
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _table_columns(conn: sqlite3.Connection) -> dict[str, list[str]]:
+    names = [
+        row["name"]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' "
+            "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+        )
+    ]
+    return {
+        name: [col["name"] for col in conn.execute(f'PRAGMA table_info("{name}")')]
+        for name in names
+    }
+
+
+@app.get("/api/db/tables")
+def db_tables() -> dict[str, Any]:
+    with closing(_read_only_db()) as conn:
+        tables = _table_columns(conn)
+        return {
+            "tables": [
+                {
+                    "name": name,
+                    "columns": columns,
+                    "rows": conn.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0],
+                }
+                for name, columns in tables.items()
+            ]
+        }
+
+
+@app.get("/api/db/tables/{table}")
+def db_rows(
+    table: str, page: int = 1, column: str | None = None, value: str | None = None
+) -> dict[str, Any]:
+    """One page of a table, newest rows first, optionally filtered by column = value.
+
+    Table and column names are checked against the schema before they are
+    quoted into SQL; the filter value is always a bound parameter.
+    """
+    with closing(_read_only_db()) as conn:
+        tables = _table_columns(conn)
+        if table not in tables:
+            raise HTTPException(404, f"unknown table {table!r}")
+        where, params = "", []
+        if column and value is not None and value != "":
+            if column not in tables[table]:
+                raise HTTPException(422, f"unknown column {column!r} in {table}")
+            where, params = f'WHERE "{column}" = ?', [value]
+        total = conn.execute(f'SELECT COUNT(*) FROM "{table}" {where}', params).fetchone()[0]
+        page = max(page, 1)
+        rows = conn.execute(
+            f'SELECT * FROM "{table}" {where} ORDER BY rowid DESC LIMIT ? OFFSET ?',
+            [*params, DB_PAGE_SIZE, (page - 1) * DB_PAGE_SIZE],
+        ).fetchall()
+        return {
+            "table": table,
+            "columns": tables[table],
+            "rows": [list(row) for row in rows],
+            "total": total,
+            "page": page,
+            "page_size": DB_PAGE_SIZE,
+        }
 
 
 @app.post("/api/reset")

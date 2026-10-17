@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import sqlite3
+from contextlib import closing
 
 import pytest
 from agents import Agent
@@ -130,6 +132,44 @@ def test_lists_records_with_line_numbers_and_flags_bad_lines(client) -> None:
     assert rows[0] == {"line": 1, "record": {"role": "shopper"}}
     assert rows[1]["line"] == 3 and rows[1]["error"].startswith("invalid JSON")
     assert rows[2] == {"line": 4, "record": {"role": "support"}}
+
+
+def test_db_tab_lists_tables_and_pages_newest_first(client) -> None:
+    tables = {t["name"]: t for t in client.get("/api/db/tables").json()["tables"]}
+    assert {"orders", "refunds", "escalations", "stores", "users"} <= set(tables)
+    assert "order_id" not in tables["orders"]["columns"] and "id" in tables["orders"]["columns"]
+
+    first = client.get("/api/db/tables/orders").json()
+    assert first["total"] == tables["orders"]["rows"]
+    assert len(first["rows"]) == chat_app.DB_PAGE_SIZE
+    second = client.get("/api/db/tables/orders", params={"page": 2}).json()
+    id_index = first["columns"].index("id")
+    assert first["rows"][-1][id_index] > second["rows"][0][id_index]
+
+
+def test_db_tab_filters_by_column_value(client) -> None:
+    data = client.get("/api/db/tables/orders", params={"column": "id", "value": "4127"}).json()
+    assert data["total"] == 1
+    row = dict(zip(data["columns"], data["rows"][0]))
+    assert (row["user_id"], row["store_id"], row["status"]) == (1, 1, "delivered")
+
+
+@pytest.mark.parametrize(
+    ("path", "params", "status"),
+    [
+        ("/api/db/tables/sqlite_master", {}, 404),
+        ('/api/db/tables/orders"; DROP TABLE orders; --', {}, 404),
+        ("/api/db/tables/orders", {"column": "id = 1 OR 1", "value": "1"}, 422),
+    ],
+)
+def test_db_tab_rejects_unknown_tables_and_columns(client, path, params, status) -> None:
+    assert client.get(path, params=params).status_code == status
+
+
+def test_db_tab_connection_is_read_only(client) -> None:
+    with pytest.raises(sqlite3.OperationalError, match="readonly"):
+        with closing(chat_app._read_only_db()) as conn:
+            conn.execute("DELETE FROM orders")
 
 
 def test_refuses_to_record_an_empty_chat(client) -> None:

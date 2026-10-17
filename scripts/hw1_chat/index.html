@@ -21,10 +21,18 @@
   html, body { height: 100%; }
   body { margin: 0; background: var(--bg); color: var(--text);
          font: 14px/1.5 system-ui, -apple-system, sans-serif;
-         display: flex; flex-direction: column; height: 100dvh; }
-  header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+         display: flex; height: 100dvh; }
+  #sidebar { width: 180px; flex-shrink: 0; display: flex; flex-direction: column; gap: 2px;
+             padding: 14px 10px; background: var(--panel); border-right: 1px solid var(--border); }
+  #sidebar h1 { font-size: 15px; margin: 0 8px 14px; }
+  #sidebar button { text-align: left; background: transparent; color: var(--text);
+                    border: 0; border-left: 3px solid transparent; border-radius: 6px; padding: 8px 10px; }
+  #sidebar button:hover { background: var(--bg); }
+  #sidebar button[aria-selected="true"] { background: var(--user); border-left-color: var(--accent); font-weight: 600; }
+  #content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-height: 57px;
            padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--panel); }
-  header h1 { font-size: 16px; margin: 0 12px 0 0; }
+  header h2 { font-size: 15px; margin: 0 8px 0 0; }
   header .count { margin-left: auto; color: var(--muted); }
   main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px;
          padding: 16px; width: 100%; max-width: 1200px; margin: 0 auto;
@@ -33,7 +41,12 @@
             min-height: 0; overflow-y: auto; }
   #chatPanel { display: flex; flex-direction: column; }
   @media (max-width: 860px) {
-    body { height: auto; min-height: 100dvh; }
+    body { height: auto; min-height: 100dvh; flex-direction: column; }
+    #sidebar { width: auto; flex-direction: row; align-items: center; flex-wrap: wrap;
+               border-right: 0; border-bottom: 1px solid var(--border); padding: 8px 10px; }
+    #sidebar h1 { margin: 0 12px 0 4px; }
+    #sidebar button { border-left: 0; border-bottom: 3px solid transparent; }
+    #sidebar button[aria-selected="true"] { border-bottom-color: var(--accent); }
     main { grid-template-columns: minmax(0, 1fr); }
     #chatPanel { height: calc(100dvh - 120px); }
   }
@@ -58,12 +71,11 @@
   form .radio { display: flex; gap: 14px; font-weight: normal; }
   #recordStatus { margin-top: 8px; }
   .ok { color: var(--ok); }
-  .tabs { display: flex; gap: 4px; margin-right: 8px; }
-  .tabs button { background: transparent; color: var(--text); border-color: var(--border); }
-  .tabs button[aria-selected="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
   #chatControls { display: contents; }
   [hidden] { display: none !important; }
-  #recordsView { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  #recordsView, #dbView { max-width: none; }
+  #recordsView { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+  #recordsTable td { white-space: nowrap; }
   #filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
   #filters input { flex: 1; min-width: 140px; }
   #recordsTable { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -71,8 +83,9 @@
   #recordsTable th { position: sticky; top: -12px; background: var(--panel); }
   #recordsTable tbody tr { cursor: pointer; }
   #recordsTable tbody tr:hover, #recordsTable tbody tr.selected { background: var(--user); }
-  .clip { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pill { display: inline-block; padding: 0 6px; border-radius: 10px; font-size: 12px; border: 1px solid currentColor; }
+  #recordsTable td.clip { width: 100%; max-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #recordsTable td.tools { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+  .pill { white-space: nowrap; display: inline-block; padding: 0 6px; border-radius: 10px; font-size: 12px; border: 1px solid currentColor; }
   .pass { color: var(--ok); } .fail { color: var(--error); }
   #summary { color: var(--muted); margin-bottom: 8px; font-size: 13px; }
   #detail h3 { margin: 14px 0 4px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
@@ -80,15 +93,30 @@
   #detail .msg { margin-bottom: 6px; }
   #detail pre { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
   @media (max-width: 860px) { #recordsView { grid-template-columns: minmax(0, 1fr); } }
+  #dbView { grid-template-columns: minmax(0, 1fr); }
+  #dbView section { display: flex; flex-direction: column; }
+  #dbFilters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  #dbPager { margin-left: auto; display: flex; gap: 6px; align-items: center; color: var(--muted); }
+  button.ghost { background: transparent; color: var(--text); border-color: var(--border); }
+  #dbNote { color: var(--muted); font-size: 13px; margin: 8px 0; }
+  #dbScroll { flex: 1; min-height: 0; overflow: auto; }
+  #dbGrid { border-collapse: collapse; font: 12px/1.4 ui-monospace, monospace; }
+  #dbGrid th, #dbGrid td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--border);
+                           white-space: nowrap; max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+  #dbGrid th { position: sticky; top: 0; background: var(--panel); }
+  #dbGrid td.null { color: var(--muted); font-style: italic; }
 </style>
 </head>
 <body>
+<nav id="sidebar" role="tablist" aria-orientation="vertical">
+  <h1>Cartwheel HW1</h1>
+  <button role="tab" id="tabChat" aria-selected="true">Chat</button>
+  <button role="tab" id="tabRecords" aria-selected="false">Records</button>
+  <button role="tab" id="tabDb" aria-selected="false">DB</button>
+</nav>
+<div id="content">
 <header>
-  <h1>Cartwheel HW1 chat</h1>
-  <div class="tabs" role="tablist">
-    <button role="tab" id="tabChat" aria-selected="true">Chat</button>
-    <button role="tab" id="tabRecords" aria-selected="false">Records</button>
-  </div>
+  <h2 id="viewTitle">Chat</h2>
   <span id="chatControls">
     <select id="role" aria-label="Role">
       <option value="shopper">shopper</option>
@@ -117,6 +145,24 @@
     </table>
   </section>
   <section id="detail"><span class="note" style="color:var(--muted)">Select a record to see it in full.</span></section>
+</main>
+<main id="dbView" hidden>
+  <section>
+    <form id="dbFilters">
+      <select id="dbTable" aria-label="Table"></select>
+      <select id="dbColumn" aria-label="Filter column"><option value="">no filter</option></select>
+      <input id="dbValue" placeholder="equals value" aria-label="Filter value">
+      <button type="submit">Apply</button>
+      <button type="button" id="dbClear" class="ghost">Clear</button>
+      <span id="dbPager">
+        <button type="button" id="dbPrev" class="ghost">‹ Prev</button>
+        <span id="dbInfo"></span>
+        <button type="button" id="dbNext" class="ghost">Next ›</button>
+      </span>
+    </form>
+    <div id="dbNote">Read-only view of the world database, newest rows first. Shows every role's data, without the agent's permission checks.</div>
+    <div id="dbScroll"><table id="dbGrid"><thead></thead><tbody></tbody></table></div>
+  </section>
 </main>
 <main id="chatView">
   <section id="chatPanel">
@@ -151,6 +197,7 @@
     </form>
   </section>
 </main>
+</div>
 <script>
 const $ = (id) => document.getElementById(id);
 const STATE_CHANGING = new Set(["issue_refund", "cancel_order"]);
@@ -229,6 +276,7 @@ $("reset").addEventListener("click", async () => {
     $("judgment").reset();
     $("recordStatus").textContent = "";
     $("session").textContent = "Database reset to the seeded state. Start a new chat.";
+    if (!$("dbView").hidden) loadTables();
   } catch (e) {
     $("session").textContent = "";
     $("session").append(Object.assign(document.createElement("span"), { className: "error", textContent: `Reset failed: ${e.message}` }));
@@ -317,17 +365,20 @@ const el = (tag, props = {}, ...children) => {
   return node;
 };
 
+const TABS = { chat: ["tabChat", "chatView"], records: ["tabRecords", "recordsView"], db: ["tabDb", "dbView"] };
 function showTab(name) {
-  const records = name === "records";
-  $("tabChat").setAttribute("aria-selected", String(!records));
-  $("tabRecords").setAttribute("aria-selected", String(records));
-  $("chatView").hidden = records;
-  $("chatControls").hidden = records;
-  $("recordsView").hidden = !records;
-  if (records) loadRecords();
+  for (const [key, [tab, view]] of Object.entries(TABS)) {
+    $(tab).setAttribute("aria-selected", String(key === name));
+    $(view).hidden = key !== name;
+  }
+  $("chatControls").hidden = name !== "chat";
+  $("viewTitle").textContent = $(TABS[name][0]).textContent;
+  if (name === "records") loadRecords();
+  if (name === "db") loadTables();
 }
 $("tabChat").addEventListener("click", () => showTab("chat"));
 $("tabRecords").addEventListener("click", () => showTab("records"));
+$("tabDb").addEventListener("click", () => showTab("db"));
 
 async function loadRecords() {
   try {
@@ -365,6 +416,7 @@ function renderRecords() {
         el("td", { colSpan: 6, className: "error", textContent: row.error }));
     }
     const r = row.record;
+    const toolNames = (r.tool_calls || []).map((c) => c.name).join(", ") || "none";
     const tr = el("tr", { className: row.line === selectedLine ? "selected" : "" },
       el("td", { textContent: row.line }),
       el("td", { textContent: `${r.role} · ${r.user_id}` }),
@@ -372,7 +424,7 @@ function renderRecords() {
       el("td", { textContent: r.requirement ?? "null" }),
       el("td", {}, el("span", { className: `pill ${r.met_requirement ? "pass" : "fail"}`, textContent: r.met_requirement ? "met" : "not met" })),
       el("td", { textContent: r.problem_source ?? "" }),
-      el("td", { className: "clip", textContent: (r.tool_calls || []).map((c) => c.name).join(", ") || "none" }));
+      el("td", { className: "tools", textContent: toolNames, title: toolNames }));
     tr.addEventListener("click", () => { selectedLine = row.line; renderRecords(); renderDetail(r, row.line); });
     return tr;
   }));
@@ -398,6 +450,60 @@ function renderDetail(r, line) {
     ...field("problem_source", r.problem_source),
   );
 }
+
+// ---- DB tab (read-only table browser) ----
+let tables = [];
+let dbPage = 1;
+
+async function loadTables() {
+  const current = $("dbTable").value;
+  try {
+    tables = (await api("/api/db/tables")).tables;
+  } catch (e) {
+    $("dbNote").textContent = `Could not load tables: ${e.message}`;
+    return;
+  }
+  $("dbTable").replaceChildren(...tables.map((t) => el("option", { value: t.name, textContent: `${t.name} (${t.rows})` })));
+  $("dbTable").value = tables.some((t) => t.name === current) ? current : (tables.find((t) => t.name === "orders") || tables[0]).name;
+  fillColumns();
+  loadRows();
+}
+
+function fillColumns() {
+  const table = tables.find((t) => t.name === $("dbTable").value);
+  $("dbColumn").replaceChildren(el("option", { value: "", textContent: "no filter" }),
+    ...(table ? table.columns : []).map((c) => el("option", { value: c, textContent: c })));
+}
+
+async function loadRows() {
+  const params = new URLSearchParams({ page: dbPage });
+  if ($("dbColumn").value && $("dbValue").value !== "") {
+    params.set("column", $("dbColumn").value);
+    params.set("value", $("dbValue").value);
+  }
+  let data;
+  try {
+    data = await api(`/api/db/tables/${encodeURIComponent($("dbTable").value)}?${params}`);
+  } catch (e) {
+    $("dbInfo").textContent = "";
+    $("dbGrid").tHead.replaceChildren();
+    $("dbGrid").tBodies[0].replaceChildren(el("tr", {}, el("td", { className: "error", textContent: e.message })));
+    return;
+  }
+  const pages = Math.max(1, Math.ceil(data.total / data.page_size));
+  $("dbInfo").textContent = `page ${data.page} of ${pages} · ${data.total} rows`;
+  $("dbPrev").disabled = data.page <= 1;
+  $("dbNext").disabled = data.page >= pages;
+  $("dbGrid").tHead.replaceChildren(el("tr", {}, ...data.columns.map((c) => el("th", { textContent: c }))));
+  $("dbGrid").tBodies[0].replaceChildren(...data.rows.map((row) => el("tr", {}, ...row.map((v) =>
+    v === null ? el("td", { className: "null", textContent: "null" }) : el("td", { textContent: String(v), title: String(v) })))));
+}
+
+$("dbTable").addEventListener("change", () => { $("dbValue").value = ""; dbPage = 1; fillColumns(); loadRows(); });
+$("dbFilters").addEventListener("submit", (e) => { e.preventDefault(); dbPage = 1; loadRows(); });
+$("dbClear").addEventListener("click", () => { $("dbColumn").value = ""; $("dbValue").value = ""; dbPage = 1; loadRows(); });
+$("dbPrev").addEventListener("click", () => { dbPage -= 1; loadRows(); });
+$("dbNext").addEventListener("click", () => { dbPage += 1; loadRows(); });
 
 ["fRole", "fMet", "fReq"].forEach((id) => $(id).addEventListener("change", renderRecords));
 $("fText").addEventListener("input", renderRecords);

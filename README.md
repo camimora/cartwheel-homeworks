@@ -50,7 +50,7 @@ uv run python -m agent.cli --role shopper --user 1
 
 CLI tracing is off by default. Building a non-OpenAI agent (including Ollama through LiteLLM) also removes the SDK's implicit OpenAI exporter for direct runs. Tracing destinations are process-wide; select Langfuse or explicitly opt into OpenAI tracing before running agents. Add `--debug` to print tool calls and results locally. To send traces to OpenAI, add `--trace-openai` and set `OPENAI_API_KEY`; OpenAI hosted tracing is unavailable for zero-data-retention organizations. For the course's Langfuse setup, use `--trace` instead. The two tracing flags cannot be combined. `OPENAI_AGENTS_DISABLE_TRACING=1` disables SDK tracing for either destination.
 
-For the Homework 1 manual session, `uv run uvicorn scripts.hw1_chat.app:app --port 8020` serves an optional browser chat at http://127.0.0.1:8020. It builds the same agent as the CLI, shows each tool call and result, records a conversation with your judgment fields as one line of `hw1-session.jsonl`, shows the recorded lines read-only in a Records tab, and can reset the database to the seeded state.
+For the Homework 1 manual session, `uv run uvicorn scripts.hw1_chat.app:app --port 8020` serves an optional browser chat at http://127.0.0.1:8020. It builds the same agent as the CLI, shows each tool call and result, records a conversation with your judgment fields as one line of `hw1-session.jsonl`, shows the recorded lines read-only in a Records tab, browses the database read-only in a DB tab, and can reset the database to the seeded state.
 
 The default development seed is the executable course world: 20 stores, 800
 products, 525 users, 10,000 orders, and 18 policy documents. The seed script
