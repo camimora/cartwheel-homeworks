@@ -58,23 +58,67 @@
   form .radio { display: flex; gap: 14px; font-weight: normal; }
   #recordStatus { margin-top: 8px; }
   .ok { color: var(--ok); }
+  .tabs { display: flex; gap: 4px; margin-right: 8px; }
+  .tabs button { background: transparent; color: var(--text); border-color: var(--border); }
+  .tabs button[aria-selected="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+  #chatControls { display: contents; }
+  [hidden] { display: none !important; }
+  #recordsView { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  #filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  #filters input { flex: 1; min-width: 140px; }
+  #recordsTable { width: 100%; border-collapse: collapse; font-size: 13px; }
+  #recordsTable th, #recordsTable td { text-align: left; padding: 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  #recordsTable th { position: sticky; top: -12px; background: var(--panel); }
+  #recordsTable tbody tr { cursor: pointer; }
+  #recordsTable tbody tr:hover, #recordsTable tbody tr.selected { background: var(--user); }
+  .clip { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pill { display: inline-block; padding: 0 6px; border-radius: 10px; font-size: 12px; border: 1px solid currentColor; }
+  .pass { color: var(--ok); } .fail { color: var(--error); }
+  #summary { color: var(--muted); margin-bottom: 8px; font-size: 13px; }
+  #detail h3 { margin: 14px 0 4px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+  #detail h3:first-child { margin-top: 0; }
+  #detail .msg { margin-bottom: 6px; }
+  #detail pre { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  @media (max-width: 860px) { #recordsView { grid-template-columns: minmax(0, 1fr); } }
 </style>
 </head>
 <body>
 <header>
   <h1>Cartwheel HW1 chat</h1>
-  <select id="role" aria-label="Role">
-    <option value="shopper">shopper</option>
-    <option value="merchant">merchant</option>
-    <option value="support">support</option>
-  </select>
-  <select id="user" aria-label="User"></select>
-  <input id="model" placeholder="model (default)" size="16" aria-label="Model">
-  <button id="newChat">New chat</button>
+  <div class="tabs" role="tablist">
+    <button role="tab" id="tabChat" aria-selected="true">Chat</button>
+    <button role="tab" id="tabRecords" aria-selected="false">Records</button>
+  </div>
+  <span id="chatControls">
+    <select id="role" aria-label="Role">
+      <option value="shopper">shopper</option>
+      <option value="merchant">merchant</option>
+      <option value="support">support</option>
+    </select>
+    <select id="user" aria-label="User"></select>
+    <input id="model" placeholder="model (default)" size="16" aria-label="Model">
+    <button id="newChat">New chat</button>
+  </span>
   <span class="count" id="count"></span>
   <button id="reset" class="secondary" title="Regenerate data/cartwheel.db, like uv run python -m seed.generate">Reset DB</button>
 </header>
-<main>
+<main id="recordsView" hidden>
+  <section>
+    <div id="filters">
+      <select id="fRole" aria-label="Filter by role"><option value="">all roles</option><option>shopper</option><option>merchant</option><option>support</option></select>
+      <select id="fMet" aria-label="Filter by result"><option value="">all results</option><option value="true">met</option><option value="false">not met</option></select>
+      <select id="fReq" aria-label="Filter by requirement"><option value="">all requirements</option></select>
+      <input id="fText" placeholder="Search request or response" aria-label="Search">
+    </div>
+    <div id="summary"></div>
+    <table id="recordsTable">
+      <thead><tr><th>#</th><th>role · user</th><th>request</th><th>req.</th><th>met</th><th>source</th><th>tools</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+  <section id="detail"><span class="note" style="color:var(--muted)">Select a record to see it in full.</span></section>
+</main>
+<main id="chatView">
   <section id="chatPanel">
     <div id="session">Choose a role and user, then start a new chat.</div>
     <div id="log"></div>
@@ -263,6 +307,100 @@ $("judgment").addEventListener("submit", async (e) => {
   }
   updateControls();
 });
+
+// ---- Records tab (read-only view of hw1-session.jsonl) ----
+let rows = [];
+let selectedLine = null;
+const el = (tag, props = {}, ...children) => {
+  const node = Object.assign(document.createElement(tag), props);
+  node.append(...children);
+  return node;
+};
+
+function showTab(name) {
+  const records = name === "records";
+  $("tabChat").setAttribute("aria-selected", String(!records));
+  $("tabRecords").setAttribute("aria-selected", String(records));
+  $("chatView").hidden = records;
+  $("chatControls").hidden = records;
+  $("recordsView").hidden = !records;
+  if (records) loadRecords();
+}
+$("tabChat").addEventListener("click", () => showTab("chat"));
+$("tabRecords").addEventListener("click", () => showTab("records"));
+
+async function loadRecords() {
+  try {
+    rows = (await api("/api/records/lines")).records;
+  } catch (e) {
+    $("summary").textContent = `Could not load records: ${e.message}`;
+    return;
+  }
+  const current = $("fReq").value;
+  const ids = [...new Set(rows.filter((r) => r.record).map((r) => r.record.requirement ?? "null"))].sort();
+  $("fReq").replaceChildren(el("option", { value: "", textContent: "all requirements" }),
+    ...ids.map((id) => el("option", { value: id, textContent: id })));
+  $("fReq").value = ids.includes(current) ? current : "";
+  renderRecords();
+}
+
+function matches(row) {
+  if (!row.record) return true;
+  const r = row.record;
+  const text = $("fText").value.trim().toLowerCase();
+  return (!$("fRole").value || r.role === $("fRole").value)
+    && (!$("fMet").value || String(r.met_requirement) === $("fMet").value)
+    && (!$("fReq").value || (r.requirement ?? "null") === $("fReq").value)
+    && (!text || `${r.request}\n${r.response}`.toLowerCase().includes(text));
+}
+
+function renderRecords() {
+  const shown = rows.filter(matches);
+  const valid = shown.filter((r) => r.record);
+  const met = valid.filter((r) => r.record.met_requirement).length;
+  $("summary").textContent = `${shown.length} of ${rows.length} records · ${met} met · ${valid.length - met} not met`;
+  $("recordsTable").tBodies[0].replaceChildren(...shown.map((row) => {
+    if (!row.record) {
+      return el("tr", {}, el("td", { textContent: row.line }),
+        el("td", { colSpan: 6, className: "error", textContent: row.error }));
+    }
+    const r = row.record;
+    const tr = el("tr", { className: row.line === selectedLine ? "selected" : "" },
+      el("td", { textContent: row.line }),
+      el("td", { textContent: `${r.role} · ${r.user_id}` }),
+      el("td", { className: "clip", textContent: r.request, title: r.request }),
+      el("td", { textContent: r.requirement ?? "null" }),
+      el("td", {}, el("span", { className: `pill ${r.met_requirement ? "pass" : "fail"}`, textContent: r.met_requirement ? "met" : "not met" })),
+      el("td", { textContent: r.problem_source ?? "" }),
+      el("td", { className: "clip", textContent: (r.tool_calls || []).map((c) => c.name).join(", ") || "none" }));
+    tr.addEventListener("click", () => { selectedLine = row.line; renderRecords(); renderDetail(r, row.line); });
+    return tr;
+  }));
+}
+
+function renderDetail(r, line) {
+  const field = (label, value) => [el("h3", { textContent: label }), el("div", { textContent: value ?? "null" })];
+  const tools = (r.tool_calls || []).map((c) => {
+    const d = el("details", { className: "msg tool", open: true },
+      el("summary", { textContent: `${c.name}(${JSON.stringify(c.arguments)})` }),
+      el("pre", { textContent: JSON.stringify(c.result, null, 2) }));
+    return d;
+  });
+  $("detail").replaceChildren(
+    el("h3", { textContent: `Line ${line} · ${r.role} · user ${r.user_id} · store ${r.store_id ?? "null"}` }),
+    el("h3", { textContent: "request" }), el("div", { className: "msg user", textContent: r.request }),
+    el("h3", { textContent: `tool_calls (${tools.length})` }), ...(tools.length ? tools : [el("div", { textContent: "none" })]),
+    el("h3", { textContent: "response" }), el("div", { className: "msg agent", textContent: r.response }),
+    ...field("expected", r.expected),
+    ...field("requirement", r.requirement),
+    el("h3", { textContent: "met_requirement" }),
+    el("span", { className: `pill ${r.met_requirement ? "pass" : "fail"}`, textContent: String(r.met_requirement) }),
+    ...field("problem_source", r.problem_source),
+  );
+}
+
+["fRole", "fMet", "fReq"].forEach((id) => $(id).addEventListener("change", renderRecords));
+$("fText").addEventListener("input", renderRecords);
 
 (async () => {
   users = (await api("/api/users")).users;

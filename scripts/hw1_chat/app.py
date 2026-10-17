@@ -5,7 +5,8 @@ are Homework 2). Each chat builds the agent exactly as ``agent.cli`` does:
 the auth context comes from the users table through ``cli.resolve_auth``,
 never from the chat. The Record button appends one line to
 ``hw1-session.jsonl`` with the observed request, tool calls, and response,
-plus the judgment fields the student typed into the form. Reset DB
+plus the judgment fields the student typed into the form. The Records tab
+shows the file read-only. Reset DB
 regenerates the seeded world, like ``uv run python -m seed.generate``.
 
 Run from the repository root:
@@ -166,6 +167,26 @@ def requirements() -> dict[str, Any]:
 @app.get("/api/records")
 def records() -> dict[str, Any]:
     return {"count": count_records(), "path": SESSION_FILE.name}
+
+
+@app.get("/api/records/lines")
+def record_lines() -> dict[str, Any]:
+    """Every record with its 1-based line number, for the read-only Records tab.
+
+    A line that is not valid JSON is returned with an error instead of
+    failing the whole listing, so a hand edit gone wrong stays visible.
+    """
+    if not SESSION_FILE.exists():
+        return {"records": []}
+    rows = []
+    for number, line in enumerate(SESSION_FILE.read_text().splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            rows.append({"line": number, "record": json.loads(line)})
+        except json.JSONDecodeError as exc:
+            rows.append({"line": number, "error": f"invalid JSON: {exc.msg}"})
+    return {"records": rows}
 
 
 @app.post("/api/reset")

@@ -123,6 +123,15 @@ def test_reset_restores_seeded_world_and_closes_chats(client, world_copy, tmp_pa
     assert response.status_code == 404
 
 
+def test_lists_records_with_line_numbers_and_flags_bad_lines(client) -> None:
+    assert client.get("/api/records/lines").json() == {"records": []}
+    chat_app.SESSION_FILE.write_text('{"role": "shopper"}\n\n{not json\n{"role": "support"}\n')
+    rows = client.get("/api/records/lines").json()["records"]
+    assert rows[0] == {"line": 1, "record": {"role": "shopper"}}
+    assert rows[1]["line"] == 3 and rows[1]["error"].startswith("invalid JSON")
+    assert rows[2] == {"line": 4, "record": {"role": "support"}}
+
+
 def test_refuses_to_record_an_empty_chat(client) -> None:
     chat = client.post("/api/chats", json={"role": "support", "user_id": 9501}).json()
     assert client.post(f"/api/chats/{chat['chat_id']}/record", json=JUDGMENT).status_code == 409
