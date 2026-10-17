@@ -99,7 +99,9 @@ class Order:
             "status": self.status,
             "ordered_at": self.ordered_at.isoformat(),
             "shipped_at": self.shipped_at.isoformat() if self.shipped_at else None,
-            "delivered_at": self.delivered_at.isoformat() if self.delivered_at else None,
+            "delivered_at": (
+                self.delivered_at.isoformat() if self.delivered_at else None
+            ),
             "refund_eligible": self.refund_eligible,
         }
 
@@ -129,7 +131,9 @@ def get_user(conn: sqlite3.Connection, user_id: int) -> User | None:
     row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     if row is None:
         return None
-    return User(id=row["id"], name=row["name"], role=row["role"], store_id=row["store_id"])
+    return User(
+        id=row["id"], name=row["name"], role=row["role"], store_id=row["store_id"]
+    )
 
 
 def get_store(conn: sqlite3.Connection, store_id: int) -> Store | None:
@@ -278,3 +282,20 @@ def world_asof(conn: sqlite3.Connection) -> date:
     if value is None:
         raise RuntimeError("meta.world_asof missing; re-run seed.generate")
     return date.fromisoformat(value)
+
+
+def get_product_from_order(conn: sqlite3.Connection, order_id: int) -> Product | None:
+    row = conn.execute(
+        "SELECT p.* FROM products p join orders o on o.product_id == p.id WHERE o.id = ?",
+        (order_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return Product(
+        id=row["id"],
+        store_id=row["store_id"],
+        title=row["title"],
+        description=row["description"],
+        category=row["category"],
+        price_cents=row["price_cents"],
+    )

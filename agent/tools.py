@@ -22,8 +22,12 @@ from typing import Any
 
 from agent import db
 from agent.auth import AuthContext, can_cancel_order, permission_denied
+from agent.config import load_facts
 from agent.helpcenter import load_policy_docs
 from agent.killswitch import kill_switch
+from rapidfuzz import fuzz
+from seed.eligibility import effective_return_window_days
+import sqlite3
 
 MAX_SEARCH_LIMIT = 25
 DEFAULT_ORDER_LIMIT = 20
@@ -52,8 +56,20 @@ def get_policy(ctx: AuthContext, policy_id: str) -> dict[str, Any]:
     Implementation notes:
         agent.helpcenter.load_policy_docs() returns every parsed doc.
     """
-    ### YOUR CODE HERE (HW1)
-    raise NotImplementedError("HW1: implement get_policy")
+    for doc in load_policy_docs():
+        if doc.policy_id == policy_id:
+            return {
+                "ok": True,
+                "policy_id": doc.policy_id,
+                "title": doc.title,
+                "audience": doc.audience,
+                "body": doc.body,
+            }
+    return {
+        "ok": False,
+        "error": "not_found",
+        "reason": f"no policy with id {policy_id!r}",
+    }
 
 
 def search_products(
@@ -95,8 +111,66 @@ def search_products(
         agent.db.list_products(conn, store_id) gives the candidate set.
         Use `with db.connection() as conn:` to close the database automatically.
     """
-    ### YOUR CODE HERE (HW1)
-    raise NotImplementedError("HW1: implement search_products")
+
+    # Validate arguments before touching the database.
+    # split() with no args also strips and drops empty parts
+    tokens = query.lower().split()
+    if not tokens:
+        return {
+            "ok": False,
+            "error": "invalid_argument",
+            "reason": "query must be non-empty",
+        }
+
+    if max_price_usd is not None and max_price_usd <= 0:
+        return {
+            "ok": False,
+            "error": "invalid_argument",
+            "reason": "max_price_usd must be strictly positive",
+        }
+
+    limit = max(1, min(limit, MAX_SEARCH_LIMIT))
+
+    with db.connection() as conn:
+        store_id = None
+        if store is not None:
+            store_obj = db.get_store_by_name(conn, store)
+            if store_obj is None:
+                return {
+                    "ok": False,
+                    "error": "not_found",
+                    "reason": f"no store named {store!r}",
+                }
+            store_id = store_obj.id
+
+        products = list(db.list_products(conn, store_id))
+
+    def matches(product) -> bool:
+        title = product.title.lower()
+        description = product.description.lower()
+        return all(token in title or token in description for token in tokens)
+
+    results = [
+        p
+        for p in products
+        if matches(p) and (max_price_usd is None or p.price_usd <= max_price_usd)
+    ]
+    results.sort(key=lambda p: (p.price_usd, p.id))
+    results = results[:limit]
+
+    return {
+        "ok": True,
+        "products": [
+            {
+                "product_id": p.id,
+                "store_id": p.store_id,
+                "title": p.title,
+                "price_usd": p.price_usd,
+            }
+            for p in results
+        ],
+        "count": len(results),
+    }
 
 
 def list_my_orders(ctx: AuthContext) -> dict[str, Any]:
@@ -121,8 +195,22 @@ def list_my_orders(ctx: AuthContext) -> dict[str, Any]:
         scope is baked into which query you run. That is the point of the
         tool: the model cannot ask for someone else's orders through it.
     """
-    ### YOUR CODE HERE (HW1)
-    raise NotImplementedError("HW1: implement list_my_orders")
+     
+    match ctx.role:
+        case "shopper":
+            with db.connection() as conn:
+                orders = db.list_orders_for_user(conn, ctx.user_id)
+            return {"ok": True, "orders": [o.to_public_dict() for o in orders], "count": len(orders)}
+        case "merchant":
+            if ctx.store_id is None:
+                return {"ok": False, "error": "invalid_argument", "reason": "merchant has no store_id"}
+            with db.connection() as conn:
+                orders = db.list_orders_for_store(conn, ctx.store_id)
+            return {"ok": True, "orders": [o.to_public_dict() for o in orders], "count": len(orders)}
+        case "support":
+            return {"ok": False, "error": "invalid_argument", "reason": "Support staff have no orders of their own. To look up specific orders use get_order instead"}
+        case _:
+            return {"ok": False, "error": "invalid_argument", "reason": "Unknown role"}
 
 
 def cancel_order(ctx: AuthContext, order_id: int, reason: str) -> dict[str, Any]:
@@ -167,9 +255,17 @@ def cancel_order(ctx: AuthContext, order_id: int, reason: str) -> dict[str, Any]
     paused = kill_switch("cancel_order")
     if paused is not None:
         return {"ok": False, "error": "paused", "reason": paused}
-    ### YOUR CODE HERE (HW1)
-    raise NotImplementedError("HW1: implement cancel_order")
-
+    with db.connection() as conn:
+        order = db.get_order(conn, order_id)
+        if order is None:
+            return {"ok": False, "error": "not_found", "reason": f"No order found with id: {order_id}"}
+        state = order.status
+        if state != "placed":
+            return {"ok": False, "error": "not_eligible", "reason": f"Order {order_id} is in {state} state. Orders can be cancelled only before shipment."}
+        if not can_cancel_order(ctx, order.user_id, order.store_id):
+            return permission_denied(f"Unsufficient permissions to cancel order {order_id}. Context: {ctx}")
+        db.set_order_status(conn, order_id, "cancelled")
+        return {"ok": True, "order_id": order_id, "status": "cancelled"}
 
 def find_order(ctx: AuthContext, query: str) -> dict[str, Any]:
     """Search the caller's orders by product name. Risk tier: read.
@@ -202,5 +298,91 @@ def find_order(ctx: AuthContext, query: str) -> dict[str, Any]:
         (at most 5), each as the dict returned by agent.db. If no orders
         match, return {"ok": True, "orders": []}.
     """
-    ### YOUR CODE HERE (HW1)
-    raise NotImplementedError("HW1: implement find_order")
+    def order_matches_query(order: db.Order, query: str) -> bool:
+        product = db.get_product_from_order(conn, order.id)
+        if product is None:
+            return False
+        score = fuzz.partial_ratio(product.title.lower(), query.lower())
+        if score >= 70:
+            return True
+        return False
+
+    with db.connection() as conn:
+        match ctx.role:
+            case "shopper":
+                orders = db.list_order_search_candidates(conn, user_id=ctx.user_id)
+                filtered_orders = [
+                    order
+                    for order in orders
+                    if order_matches_query(order, query)
+                ]
+                limited_filtered_orders = filtered_orders[:5]
+                return {"ok": True, "orders": [order.to_public_dict() for order in limited_filtered_orders]}
+            case "merchant":
+                orders = db.list_order_search_candidates(conn, store_id=ctx.store_id)
+                filtered_orders = [
+                    order
+                    for order in orders
+                    if order_matches_query(order, query)
+                ]
+                limited_filtered_orders = filtered_orders[:5]
+                return {"ok": True, "orders": [order.to_public_dict() for order in limited_filtered_orders]}
+            case "support":
+                orders = db.list_order_search_candidates(conn, all_orders=True)
+                filtered_orders = [
+                    order
+                    for order in orders
+                    if order_matches_query(order, query)
+                ]
+                limited_filtered_orders = filtered_orders[:5]
+                return {"ok": True, "orders": [order.to_public_dict() for order in limited_filtered_orders]}
+            case _:
+                return {"ok": False, "error": "invalid_argument", "reason": "Unknown role"}
+
+
+def get_store_return_window(ctx: AuthContext, store_name: str) -> dict[str, Any]:
+    """Look up the return window that applies to one store. Risk tier: read.
+
+    Store policy is public help-center content, so every role may call this
+    and it needs no permission check. A store override takes precedence over
+    the platform default (facts.yaml `store_overrides.precedence`).
+
+    Args:
+        ctx: The caller's auth context. Unused here, but every tool takes it.
+        store_name: The store's name or slug, matched case-insensitively,
+            e.g. "Juniper Home Goods" or "juniper-home-goods".
+
+    Returns:
+        On success: {"ok": True, "store_id": int, "store_name": str,
+        "return_window_days": int, "has_override": bool,
+        "platform_return_window_days": int, "policy_id": str | None}.
+        return_window_days is the window that applies to the store's orders.
+        policy_id is the store's own policy doc, for citation, or None when
+        the help center has no doc for that store.
+        Empty name: {"ok": False, "error": "invalid_argument", ...}.
+        Unknown store: {"ok": False, "error": "not_found", ...}.
+    """
+    if not store_name.strip():
+        return {"ok": False, "error": "invalid_argument", "reason": "empty store name"}
+    with db.connection() as conn:
+        store = db.get_store_by_name(conn, store_name.strip())
+    if store is None:
+        return {
+            "ok": False,
+            "error": "not_found",
+            "reason": f"no store named {store_name!r}",
+        }
+    platform_window = load_facts()["return_window_days"]
+    store_policy_id = f"store-{store.slug}-policy"
+    has_doc = any(doc.policy_id == store_policy_id for doc in load_policy_docs())
+    return {
+        "ok": True,
+        "store_id": store.id,
+        "store_name": store.name,
+        "return_window_days": effective_return_window_days(
+            platform_window, store.return_window_days_override
+        ),
+        "has_override": store.return_window_days_override is not None,
+        "platform_return_window_days": platform_window,
+        "policy_id": store_policy_id if has_doc else None,
+    }
