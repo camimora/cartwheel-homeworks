@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cartwheel HW1 Chat</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5d6677;
+    --border: #d9dde5; --accent: #2f5bd3; --user: #e7edfb; --agent: #f1f2f5;
+    --tool: #fbf7ea; --warn: #8a5a00; --error: #b3261e; --ok: #1e7a3c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171c; --panel: #1c2027; --text: #e4e7ec; --muted: #9aa3b2;
+      --border: #2e343e; --accent: #7c9cf0; --user: #22304f; --agent: #242931;
+      --tool: #2f2a1c; --warn: #e0b45c; --error: #f2847c; --ok: #6ccf8e;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 system-ui, -apple-system, sans-serif;
+         display: flex; flex-direction: column; height: 100dvh; }
+  header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+           padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--panel); }
+  header h1 { font-size: 16px; margin: 0 12px 0 0; }
+  header .count { margin-left: auto; color: var(--muted); }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px;
+         padding: 16px; width: 100%; max-width: 1200px; margin: 0 auto;
+         flex: 1; min-height: 0; }
+  section { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px;
+            min-height: 0; overflow-y: auto; }
+  #chatPanel { display: flex; flex-direction: column; }
+  @media (max-width: 860px) {
+    body { height: auto; min-height: 100dvh; }
+    main { grid-template-columns: minmax(0, 1fr); }
+    #chatPanel { height: calc(100dvh - 120px); }
+  }
+  button.secondary { background: transparent; color: var(--error); border-color: var(--error); }
+  select, input, textarea, button { font: inherit; color: var(--text); background: var(--bg);
+         border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
+  button { cursor: pointer; background: var(--accent); color: #fff; border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  #session { color: var(--muted); margin-bottom: 8px; }
+  #log { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; overflow-y: auto; }
+  .msg { padding: 8px 10px; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .user { background: var(--user); align-self: flex-end; max-width: 85%; }
+  .agent { background: var(--agent); max-width: 85%; }
+  .tool { background: var(--tool); font: 12px/1.4 ui-monospace, monospace; }
+  .tool summary { cursor: pointer; }
+  .note { color: var(--warn); font-size: 13px; }
+  .error { color: var(--error); }
+  #composer { display: flex; gap: 8px; margin-top: 10px; }
+  #composer textarea { flex: 1; resize: vertical; min-height: 40px; }
+  form label { display: block; margin: 10px 0 4px; font-weight: 600; }
+  form textarea, form select { width: 100%; }
+  form .radio { display: flex; gap: 14px; font-weight: normal; }
+  #recordStatus { margin-top: 8px; }
+  .ok { color: var(--ok); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Cartwheel HW1 chat</h1>
+  <select id="role" aria-label="Role">
+    <option value="shopper">shopper</option>
+    <option value="merchant">merchant</option>
+    <option value="support">support</option>
+  </select>
+  <select id="user" aria-label="User"></select>
+  <input id="model" placeholder="model (default)" size="16" aria-label="Model">
+  <button id="newChat">New chat</button>
+  <span class="count" id="count"></span>
+  <button id="reset" class="secondary" title="Regenerate data/cartwheel.db, like uv run python -m seed.generate">Reset DB</button>
+</header>
+<main>
+  <section id="chatPanel">
+    <div id="session">Choose a role and user, then start a new chat.</div>
+    <div id="log"></div>
+    <div id="composer">
+      <textarea id="input" placeholder="Type a message (Enter sends, Shift+Enter adds a new line)" disabled></textarea>
+      <button id="send" disabled>Send</button>
+    </div>
+  </section>
+  <section>
+    <form id="judgment">
+      <strong>Record this conversation</strong>
+      <label for="expected">expected</label>
+      <textarea id="expected" rows="4" placeholder="Behavior implied by SPEC.md"></textarea>
+      <label for="requirement">requirement</label>
+      <select id="requirement"><option value="">null (no single requirement)</option></select>
+      <label>met_requirement</label>
+      <div class="radio">
+        <label><input type="radio" name="met" value="true"> true</label>
+        <label><input type="radio" name="met" value="false"> false</label>
+      </div>
+      <label for="source">problem_source</label>
+      <select id="source" disabled>
+        <option value="">null</option>
+        <option value="prompt">prompt</option>
+        <option value="tool">tool</option>
+        <option value="specification">specification</option>
+      </select>
+      <button id="record" type="submit" style="margin-top:12px" disabled>Record line</button>
+      <div id="recordStatus"></div>
+    </form>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const STATE_CHANGING = new Set(["issue_refund", "cancel_order"]);
+let users = [];
+let chat = null;
+let turns = 0;
+let busy = false;
+
+async function api(path, body) {
+  const res = await fetch(path, body === undefined ? {} : {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail || res.statusText));
+  return data;
+}
+
+function fillUsers() {
+  const role = $("role").value;
+  $("user").innerHTML = "";
+  for (const u of users.filter((u) => u.role === role)) {
+    const opt = document.createElement("option");
+    opt.value = u.id;
+    opt.textContent = `${u.id} · ${u.name}` + (u.store_id ? ` · store ${u.store_id}` : "");
+    $("user").append(opt);
+  }
+}
+
+function add(cls, text) {
+  const div = document.createElement("div");
+  div.className = `msg ${cls}`;
+  div.textContent = text;
+  $("log").append(div);
+  $("log").scrollTop = $("log").scrollHeight;
+  return div;
+}
+
+function addTool(call) {
+  const details = document.createElement("details");
+  details.className = "msg tool";
+  const summary = document.createElement("summary");
+  summary.textContent = `[tool] ${call.name}(${JSON.stringify(call.arguments)})`;
+  const pre = document.createElement("pre");
+  pre.textContent = JSON.stringify(call.result, null, 2);
+  details.append(summary, pre);
+  $("log").append(details);
+}
+
+async function refreshCount() {
+  const r = await api("/api/records");
+  $("count").textContent = `${r.path}: ${r.count} record${r.count === 1 ? "" : "s"}`;
+}
+
+function updateControls() {
+  const open = chat && !chat.recorded;
+  $("input").disabled = !open || busy;
+  $("send").disabled = !open || busy;
+  const met = document.querySelector("input[name=met]:checked");
+  $("source").disabled = !met || met.value === "true";
+  if ($("source").disabled) $("source").value = "";
+  $("record").disabled = !open || busy || turns === 0;
+  $("reset").disabled = busy;
+}
+
+$("reset").addEventListener("click", async () => {
+  const unrecorded = chat && !chat.recorded && turns > 0;
+  const msg = "Regenerate the database? Refunds, cancellations, and escalations made in earlier chats are erased. "
+    + "hw1-session.jsonl is kept."
+    + (unrecorded ? "\n\nThe current conversation has not been recorded and will be closed." : "");
+  if (!confirm(msg)) return;
+  busy = true; updateControls();
+  try {
+    await api("/api/reset", {});
+    chat = null; turns = 0;
+    $("log").innerHTML = "";
+    $("judgment").reset();
+    $("recordStatus").textContent = "";
+    $("session").textContent = "Database reset to the seeded state. Start a new chat.";
+  } catch (e) {
+    $("session").textContent = "";
+    $("session").append(Object.assign(document.createElement("span"), { className: "error", textContent: `Reset failed: ${e.message}` }));
+  }
+  busy = false; updateControls();
+});
+
+$("role").addEventListener("change", fillUsers);
+document.querySelectorAll("input[name=met]").forEach((r) => r.addEventListener("change", updateControls));
+
+$("newChat").addEventListener("click", async () => {
+  if (chat && !chat.recorded && turns > 0 && !confirm("This conversation has not been recorded. Start a new chat anyway?")) return;
+  try {
+    chat = await api("/api/chats", { role: $("role").value, user_id: Number($("user").value), model: $("model").value.trim() || null });
+    turns = 0;
+    $("log").innerHTML = "";
+    $("judgment").reset();
+    $("recordStatus").textContent = "";
+    $("session").textContent = `role=${chat.role} user=${chat.user_id} store=${chat.store_id ?? "null"} prompt_version=${chat.prompt_version}`;
+    updateControls();
+    $("input").focus();
+  } catch (e) {
+    $("session").innerHTML = "";
+    $("session").append(Object.assign(document.createElement("span"), { className: "error", textContent: e.message }));
+  }
+});
+
+async function send() {
+  const text = $("input").value.trim();
+  if (!text || !chat) return;
+  add("user", text);
+  $("input").value = "";
+  busy = true; updateControls();
+  const pending = add("agent", "…");
+  try {
+    const turn = await api(`/api/chats/${chat.chat_id}/messages`, { message: text });
+    pending.remove();
+    turn.tool_calls.forEach(addTool);
+    add("agent", turn.response);
+    if (turn.tool_calls.some((c) => STATE_CHANGING.has(c.name) && c.result && c.result.ok)) {
+      add("note", "This conversation changed the database. Run `uv run python -m seed.generate` before another conversation that needs the original order state.");
+    }
+    turns += 1;
+  } catch (e) {
+    pending.className = "msg agent error";
+    pending.textContent = `Error: ${e.message}`;
+  }
+  busy = false; updateControls();
+  $("input").focus();
+}
+
+$("send").addEventListener("click", send);
+$("input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+});
+
+$("judgment").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const met = document.querySelector("input[name=met]:checked");
+  const status = $("recordStatus");
+  if (!met) { status.className = "error"; status.textContent = "Choose met_requirement."; return; }
+  try {
+    const r = await api(`/api/chats/${chat.chat_id}/record`, {
+      expected: $("expected").value,
+      requirement: $("requirement").value || null,
+      met_requirement: met.value === "true",
+      problem_source: $("source").value || null,
+    });
+    chat.recorded = true;
+    status.className = "ok";
+    status.textContent = `Recorded. The file now has ${r.count} records. Start a new chat for the next conversation.`;
+    refreshCount();
+  } catch (err) {
+    status.className = "error";
+    status.textContent = err.message;
+  }
+  updateControls();
+});
+
+(async () => {
+  users = (await api("/api/users")).users;
+  fillUsers();
+  for (const id of (await api("/api/requirements")).requirements) {
+    $("requirement").append(Object.assign(document.createElement("option"), { value: id, textContent: id }));
+  }
+  refreshCount();
+})();
+</script>
+</body>
+</html>

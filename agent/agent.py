@@ -37,7 +37,7 @@ from seed.eligibility import refund_needs_approval
 #
 # Specification mapping:
 #   PURPOSE-1 and SCOPE-1/2 -> identity, capabilities, and refusal rules
-#   TOOL-1 through TOOL-8   -> tool guidance and the registered tool list
+#   TOOL-1 through TOOL-8, TOOL-10 -> tool guidance and the registered tool list
 #   ESC-1 through ESC-4     -> escalation instructions
 #   RESP-1, RESP-4, RESP-5  -> citation, disclosure, and tone guidance
 # AUTH-1 is absent from the prompt mapping because agent/auth.py and the tool
@@ -72,9 +72,13 @@ or credential changes, and anything outside Cartwheel.
   order's refund eligibility.
 
 ## Escalation
-When you are unsure, or an action is above your authority (for example a
+- When you are unsure, or an action is above your authority (for example a
 refund above the auto-approval threshold), call escalate_to_human and tell
 the user a human will follow up.
+- Account changes of any kind (for example email, password, or payment
+card) also go to a human. Do not make the change yourself; call
+escalate_to_human and tell the user a human will follow up. Escalate directly, 
+without asking for confirmation.
 
 ## Tone
 Plain and warm. No legalese.
@@ -427,6 +431,14 @@ def find_order(
     return _call(wrapper, hw_tools.find_order, query)
 
 
+@function_tool
+def get_store_return_window(
+    wrapper: RunContextWrapper[AuthContext], store_name: str
+) -> dict[str, Any]:
+    """Look up the return window that applies to one store, including any store override of the platform default, and the store's policy id for citation."""
+    return _call(wrapper, hw_tools.get_store_return_window, store_name)
+
+
 # Progressive disclosure: a session exposes only the tools its role can use.
 # Fewer tools mean fewer wrong choices and cleaner evals. At dev scale the
 # only difference is that support staff, who have no orders of their own,
@@ -439,6 +451,7 @@ _COMMON_TOOLS = [
     issue_refund,
     cancel_order,
     escalate_to_human,
+    get_store_return_window,
 ]
 TOOLS_BY_ROLE = {
     "shopper": _COMMON_TOOLS + [list_my_orders, find_order],
