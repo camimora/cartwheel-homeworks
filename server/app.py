@@ -123,8 +123,33 @@ def create_session(body: SessionCreate) -> dict[str, Any]:
     session id and a signed token. The token payload must contain session_id,
     user_id, role, store_id, and issued_at.
     """
-    ### YOUR CODE HERE (HW2)
-    raise NotImplementedError("HW2: implement POST /sessions")
+    if body.role not in ROLES:
+        raise HTTPException(status_code=400, detail=f"unknown role: {body.role}")
+
+    with db.connection() as conn:
+        user = db.get_user(conn, body.user_id)
+    if user is None:
+        raise HTTPException(
+            status_code=404, detail=f"Unknown user with id {body.user_id}"
+        )
+    if user.role != body.role:
+        raise HTTPException(
+            status_code=403, detail=f"Wrong role {body.role} for user {user.id}"
+        )
+    auth_context = AuthContext(user_id=user.id, role=user.role, store_id=user.store_id)
+    session_id = uuid.uuid4().hex
+    sql_session = SQLiteSession(session_id, str(SESSIONS_DB))
+    _SESSIONS[session_id] = (auth_context, sql_session)
+    token = create_token(
+        {
+            "session_id": session_id,
+            "user_id": user.id,
+            "role": user.role,
+            "store_id": user.store_id,
+            "issued_at": int(time.time()),
+        }
+    )
+    return {"session_id": session_id, "token": token}
 
 
 def _authorize(session_id: str, authorization: str | None) -> AuthContext:
@@ -136,7 +161,9 @@ def _authorize(session_id: str, authorization: str | None) -> AuthContext:
     if payload.get("session_id") != session_id:
         raise HTTPException(status_code=403, detail="token is for another session")
     if session_id not in _SESSIONS:
-        raise HTTPException(status_code=404, detail="unknown session (server restarted?)")
+        raise HTTPException(
+            status_code=404, detail="unknown session (server restarted?)"
+        )
     return _SESSIONS[session_id][0]
 
 
