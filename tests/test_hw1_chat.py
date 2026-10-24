@@ -18,6 +18,7 @@ from tests.eval.fake_model import FakeModel, text_message, tool_call
 
 @pytest.fixture
 def client(world, tmp_path, monkeypatch):
+    monkeypatch.setattr(chat_app, "load_env", lambda: None)
     monkeypatch.setattr(chat_app, "SESSION_FILE", tmp_path / "hw1-session.jsonl")
     monkeypatch.setattr(chat_app, "SESSIONS_DB", tmp_path / "sessions.db")
     fake = FakeModel()

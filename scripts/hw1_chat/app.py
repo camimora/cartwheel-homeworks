@@ -23,10 +23,10 @@ import sqlite3
 import threading
 import time
 import uuid
-from contextlib import closing
+from contextlib import asynccontextmanager, closing
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, AsyncIterator
 
 from agents import Agent, RunConfig, Runner, SQLiteSession
 from agents.items import RunItem
@@ -49,8 +49,14 @@ INDEX_HTML = Path(__file__).resolve().parent / "index.html"
 PROBLEM_SOURCES = {"prompt", "tool", "specification"}
 DB_PAGE_SIZE = 50
 
-load_env()
-app = FastAPI(title="Cartwheel HW1 chat")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    load_env()
+    yield
+
+
+app = FastAPI(title="Cartwheel HW1 chat", lifespan=lifespan)
 _write_lock = threading.Lock()
 
 
