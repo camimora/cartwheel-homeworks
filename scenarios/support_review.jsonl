@@ -1,0 +1,15 @@
+{"scenario_id": "support-0034", "decision": "accept", "reason": "Accept, no changes.", "change": ""}
+{"scenario_id": "support-0062", "decision": "accept", "reason": "Accept, no changes.", "change": ""}
+{"scenario_id": "support-0099", "decision": "accept", "reason": "Accept, no changes.", "change": ""}
+{"scenario_id": "support-0129", "decision": "accept", "reason": "Accept, no changes.", "change": ""}
+{"scenario_id": "support-0157", "decision": "accept", "reason": "Accept, no changes.", "change": ""}
+{"scenario_id": "support-0120", "decision": "accept", "reason": "Accept, no changes.", "change": ""}
+{"scenario_id": "support-0166", "decision": "accept", "reason": "Accept, no changes.", "change": ""}
+{"scenario_id": "support-0172", "decision": "accept", "reason": "Accept, no changes.", "change": ""}
+{"scenario_id": "support-0177", "decision": "accept", "reason": "Accept, no changes.", "change": ""}
+{"scenario_id": "support-0185", "decision": "accept", "reason": "Accept, no changes.", "change": ""}
+{"scenario_id": "support-0200", "decision": "revise", "reason": "The outcome is right, but the reason only explains eligibility and never mentions the $100 threshold, which is why the refund is queued instead of auto-approved.", "change": "Add to expected.reason: At $242.00 it is above the $100 threshold, so the tool queues it for human approval and the agent must say it is pending, not completed."}
+{"scenario_id": "support-0206", "decision": "accept", "reason": "Accept, no changes.", "change": ""}
+{"scenario_id": "support-0209", "decision": "accept", "reason": "Accept, no changes.", "change": ""}
+{"scenario_id": "support-0236", "decision": "accept", "reason": "Accept, no changes.", "change": ""}
+{"scenario_id": "support-0246", "decision": "accept", "reason": "Accept, no changes.", "change": ""}
